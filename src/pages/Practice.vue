@@ -1,20 +1,23 @@
 <template>
-  <div class="min-h-screen bg-gradient-to-b from-green-400 to-teal-500 p-4">
+  <div class="min-h-screen bg-gradient-to-b from-sky-50 via-white to-amber-50 p-4">
     <div class="max-w-lg mx-auto">
       <!-- 顶部状态 -->
       <div class="flex items-center justify-between mb-4">
         <button
           @click="goHome"
-          class="px-4 py-2 bg-white/20 rounded-xl text-white hover:bg-white/30"
+          class="px-4 py-2 bg-white text-slate-600 rounded-2xl ring-1 ring-slate-900/5 shadow-sm hover:bg-slate-50 transition-all"
         >
           ← 返回
         </button>
-        <h2 class="text-xl font-bold text-white">
+        <h2 class="text-xl font-bold text-slate-800">
           {{ grade === 45 ? '4-5年级' : '3年级' }} · 题题练
         </h2>
-        <div class="text-white/90 text-sm text-right leading-tight">
-          <div>第 {{ currentIndex + 1 }} 题</div>
-          <div>做对 {{ correctCount }} 题</div>
+        <div class="flex items-center gap-2">
+          <PlayerAvatar :avatar-id="avatarId" :size="36" />
+          <div class="text-slate-500 text-sm text-right leading-tight">
+            <div>第 {{ currentIndex + 1 }} 题</div>
+            <div>做对 {{ correctCount }} 题</div>
+          </div>
         </div>
       </div>
 
@@ -41,7 +44,7 @@
         @prev="prevQuestion"
       />
 
-      <div v-else class="bg-white rounded-2xl shadow-xl p-8 text-center text-gray-500">
+      <div v-else class="bg-white rounded-3xl shadow-sm ring-1 ring-slate-900/5 p-8 text-center text-slate-400">
         正在准备题目…
       </div>
     </div>
@@ -52,10 +55,16 @@
 import { ref, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import QuestionCard from '../components/QuestionCard.vue';
+import PlayerAvatar from '../components/PlayerAvatar.vue';
 import { getRandomQuestions, formatResultMessage } from '../utils/game.js';
+import { recordMistake } from '../utils/mistakeBook.js';
+import { loadAvatar } from '../utils/avatars.js';
 
 const route = useRoute();
 const router = useRouter();
+
+// 顶部小头像（本机选的 Q版头像）
+const avatarId = ref(loadAvatar());
 
 // 年级在 setup 阶段就能拿到，题目立即生成，避免首帧空白
 const grade = ref(Number(route.query.grade) === 45 ? 45 : 3);
@@ -112,6 +121,18 @@ function handleSubmit(result) {
       correct: result.correct,
     },
   };
+
+  // 答错才记入错题本；答对不写入，也不删除已有记录（错题本只做回顾，手动移除）
+  if (!result.correct) {
+    recordMistake({
+      grade: grade.value,
+      numbers: q.numbers,
+      solution: q.solution,
+      expression: result.expression,
+      source: 'practice',
+      kind: 'wrong',
+    });
+  }
 }
 
 function nextQuestion() {

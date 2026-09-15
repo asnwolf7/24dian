@@ -1,5 +1,5 @@
 <template>
-  <div class="bg-white rounded-2xl shadow-xl p-6">
+  <div class="bg-white rounded-3xl shadow-sm ring-1 ring-slate-900/5 p-6">
     <!-- 题目数字：点一次即禁用，回退后恢复 -->
     <div class="flex justify-center gap-4 mb-6">
       <button
@@ -7,11 +7,12 @@
         :key="idx"
         @click="inputNumber(num, idx)"
         :disabled="isNumberDisabled(idx) || locked"
+        data-testid="number-btn"
         :class="[
-          'w-16 h-16 rounded-xl text-3xl font-bold transition-all select-none',
+          'w-16 h-16 rounded-2xl text-3xl font-bold transition-all select-none border-2',
           isNumberDisabled(idx) || locked
-            ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-            : 'bg-blue-500 text-white hover:bg-blue-600 hover:scale-105 cursor-pointer shadow-lg',
+            ? 'bg-slate-50 text-slate-300 border-slate-100 cursor-not-allowed'
+            : 'bg-white text-sky-600 border-sky-200 hover:bg-sky-50 hover:border-sky-300 hover:scale-105 cursor-pointer shadow-sm',
         ]"
       >
         {{ num }}
@@ -20,10 +21,11 @@
 
     <!-- 算式显示：独占一行，尽量宽，方便核对 -->
     <div
-      class="bg-gray-100 rounded-xl px-4 py-3 text-xl font-mono min-h-[52px] mb-3 flex items-center overflow-x-auto whitespace-nowrap"
+      data-testid="expression-box"
+      class="bg-slate-50 ring-1 ring-slate-200 rounded-2xl px-4 py-3 text-xl font-mono text-slate-700 min-h-[52px] mb-3 flex items-center overflow-x-auto whitespace-nowrap"
     >
       <span v-if="expression">{{ expression }}</span>
-      <span v-else class="text-gray-400 text-base">点击下面的数字和符号组成算式</span>
+      <span v-else class="text-slate-400 text-base">点击下面的数字和符号组成算式</span>
     </div>
 
     <!-- 清除 / 回退 单独一行，不占用算式框的宽度 -->
@@ -31,7 +33,8 @@
       <button
         @click="clearExpression"
         :disabled="locked"
-        class="px-5 py-2 bg-gray-200 rounded-xl hover:bg-gray-300 disabled:opacity-40 disabled:cursor-not-allowed"
+        data-testid="clear-btn"
+        class="px-5 py-2 bg-slate-100 text-slate-600 rounded-2xl hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
         title="全部清除"
       >
         ✋ 清除
@@ -39,7 +42,8 @@
       <button
         @click="backspace"
         :disabled="locked || !expression"
-        class="px-5 py-2 bg-gray-200 rounded-xl hover:bg-gray-300 disabled:opacity-40 disabled:cursor-not-allowed"
+        data-testid="backspace-btn"
+        class="px-5 py-2 bg-slate-100 text-slate-600 rounded-2xl hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
         title="回退一步"
       >
         ⌫ 回退
@@ -49,7 +53,7 @@
     <!-- 参考答案（点击“查看正确答案”后显示） -->
     <div
       v-if="revealed && solution"
-      class="mb-4 p-3 rounded-xl text-center bg-sky-50 text-sky-700"
+      class="mb-4 p-3 rounded-2xl text-center bg-violet-50 text-violet-700 ring-1 ring-violet-100"
     >
       参考答案：{{ displaySolution }} = 24
     </div>
@@ -61,7 +65,8 @@
         :key="op"
         @click="inputOperator(op)"
         :disabled="locked"
-        class="py-3 rounded-xl text-xl font-bold bg-orange-500 text-white hover:bg-orange-600 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+        data-testid="op-btn"
+        class="py-3 rounded-2xl text-xl font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
       >
         {{ op }}
       </button>
@@ -70,8 +75,13 @@
     <!-- 判题反馈 -->
     <div
       v-if="feedback"
-      class="mb-4 p-3 rounded-xl text-center leading-relaxed"
-      :class="feedback.valid ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'"
+      data-testid="feedback-box"
+      class="mb-4 p-3 rounded-2xl text-center leading-relaxed ring-1"
+      :class="
+        feedback.valid
+          ? 'bg-emerald-50 text-emerald-700 ring-emerald-100'
+          : 'bg-rose-50 text-rose-600 ring-rose-100'
+      "
     >
       {{ feedback.message }}
     </div>
@@ -81,14 +91,16 @@
       <button
         v-if="showPrev"
         @click="$emit('prev')"
-        class="flex-1 py-3 px-4 rounded-xl text-lg font-medium bg-gray-500 text-white hover:bg-gray-600 whitespace-nowrap"
+        data-testid="prev-btn"
+        class="flex-1 py-3 px-4 rounded-2xl text-lg font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 whitespace-nowrap transition-all"
       >
         ← 上一题
       </button>
       <button
         v-if="showSolutionButton"
         @click="revealed = !revealed"
-        class="flex-1 py-3 px-4 rounded-xl text-lg font-medium bg-sky-500 text-white hover:bg-sky-600 whitespace-nowrap"
+        data-testid="solution-btn"
+        class="flex-1 py-3 px-4 rounded-2xl text-lg font-medium bg-white text-violet-600 ring-1 ring-violet-200 hover:bg-violet-50 whitespace-nowrap transition-all"
       >
         {{ revealed ? '收起答案' : '查看正确答案' }}
       </button>
@@ -97,14 +109,16 @@
         v-if="showSubmit && !locked"
         @click="submitAnswer"
         :disabled="!expression"
-        class="flex-1 py-3 px-4 rounded-xl text-lg font-medium bg-green-500 text-white hover:bg-green-600 disabled:opacity-40 disabled:cursor-not-allowed"
+        data-testid="submit-btn"
+        class="flex-1 py-3 px-4 rounded-2xl text-lg font-medium bg-sky-500 text-white hover:bg-sky-600 shadow-sm disabled:opacity-40 disabled:cursor-not-allowed transition-all"
       >
         提交
       </button>
       <button
         v-if="showNext"
         @click="$emit('next')"
-        class="flex-1 py-3 px-4 rounded-xl text-lg font-medium bg-blue-500 text-white hover:bg-blue-600 whitespace-nowrap"
+        data-testid="next-btn"
+        class="flex-1 py-3 px-4 rounded-2xl text-lg font-medium bg-amber-400 text-amber-950 hover:bg-amber-300 shadow-sm whitespace-nowrap transition-all"
       >
         下一题 →
       </button>

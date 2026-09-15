@@ -1,28 +1,31 @@
 <template>
-  <div class="min-h-screen bg-gradient-to-b from-orange-400 to-red-500 p-4">
+  <div class="min-h-screen bg-gradient-to-b from-sky-50 via-white to-amber-50 p-4">
     <div class="max-w-2xl mx-auto">
       <!-- 顶部状态栏 -->
-      <div class="flex items-center justify-between mb-4 text-white">
+      <div class="flex items-center justify-between mb-4">
         <button
           @click="confirmExit"
-          class="px-4 py-2 bg-white/20 rounded-xl hover:bg-white/30"
+          class="px-4 py-2 bg-white text-slate-600 rounded-2xl ring-1 ring-slate-900/5 shadow-sm hover:bg-slate-50 transition-all"
         >
           ← 返回
         </button>
-        <div class="text-center">
-          <div class="text-3xl font-bold tabular-nums">{{ formatTime(timeLeft) }}</div>
-          <div class="text-xs opacity-90">剩余时间</div>
+        <div class="flex items-center gap-3">
+          <div class="text-center">
+            <div class="text-3xl font-bold tabular-nums text-slate-800">{{ formatTime(timeLeft) }}</div>
+            <div class="text-xs text-slate-400">剩余时间</div>
+          </div>
+          <PlayerAvatar :avatar-id="avatarId" :size="36" />
         </div>
         <div class="text-right">
-          <div class="text-xl font-bold">{{ answeredCount }}/{{ totalCount }}</div>
-          <div class="text-xs opacity-90">已作答</div>
+          <div class="text-xl font-bold text-slate-800">{{ answeredCount }}/{{ totalCount }}</div>
+          <div class="text-xs text-slate-400">已作答</div>
         </div>
       </div>
 
       <!-- 进度条 -->
-      <div class="h-2 bg-white/30 rounded-full mb-4 overflow-hidden">
+      <div class="h-2 bg-slate-200 rounded-full mb-4 overflow-hidden">
         <div
-          class="h-full bg-white transition-all duration-300"
+          class="h-full bg-amber-400 transition-all duration-300"
           :style="{ width: `${(answeredCount / totalCount) * 100}%` }"
         ></div>
       </div>
@@ -46,11 +49,11 @@
         @next="nextQuestion"
       />
 
-      <div v-else class="bg-white rounded-2xl shadow-xl p-8 text-center text-gray-500">
+      <div v-else class="bg-white rounded-3xl shadow-sm ring-1 ring-slate-900/5 p-8 text-center text-slate-400">
         正在准备题目…
       </div>
 
-      <!-- 题号导航：绿色=已作答，橙色=未作答 -->
+      <!-- 题号导航：绿色=已作答，琥珀=未作答 -->
       <div class="mt-4">
         <QuestionNav :items="navItems" @select="jumpToQuestion" />
       </div>
@@ -58,7 +61,7 @@
       <div class="mt-4 text-center">
         <button
           @click="endContest"
-          class="px-6 py-2 bg-white/20 rounded-xl text-white hover:bg-white/30"
+          class="px-6 py-2 bg-white text-slate-600 rounded-2xl ring-1 ring-slate-900/5 shadow-sm hover:bg-slate-50 transition-all"
         >
           提前交卷
         </button>
@@ -67,19 +70,29 @@
       <!-- 成绩弹窗（交卷后才判分） -->
       <div
         v-if="showResult"
-        class="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
+        class="fixed inset-0 bg-slate-900/40 flex items-center justify-center p-4 z-50"
       >
-        <div class="bg-white rounded-2xl p-8 max-w-sm w-full text-center">
-          <h2 class="text-3xl font-bold text-gray-800 mb-4">🎉 竞赛结束！</h2>
-          <div class="text-6xl font-bold text-green-500 mb-2">{{ correctCount }}</div>
-          <p class="text-gray-600 mb-4">答对题数（共 {{ totalCount }} 题）</p>
-          <p class="text-gray-500 mb-2">
+        <div class="bg-white rounded-3xl shadow-sm ring-1 ring-slate-900/5 p-8 max-w-sm w-full text-center">
+          <div class="flex justify-center mb-2">
+            <PlayerAvatar :avatar-id="avatarId" :size="64" />
+          </div>
+          <h2 class="text-3xl font-bold text-slate-800 mb-4">🎉 竞赛结束！</h2>
+          <div class="text-6xl font-bold text-emerald-500 mb-2">{{ correctCount }}</div>
+          <p class="text-slate-500 mb-4">答对题数（共 {{ totalCount }} 题）</p>
+          <p class="text-slate-400 mb-2">
             作答 {{ answeredCount }} 题，未作答 {{ totalCount - answeredCount }} 题
           </p>
-          <p class="text-gray-500 mb-6">用时：{{ formatTime(totalTime - timeLeft) }}</p>
+          <p class="text-slate-400 mb-6">用时：{{ formatTime(totalTime - timeLeft) }}</p>
+          <p class="text-sm text-rose-500 mb-4">错题已存入错题本，记得回顾哦～</p>
+          <button
+            @click="goMistakes"
+            class="w-full py-3 px-6 rounded-2xl text-lg font-medium bg-amber-400 text-amber-950 hover:bg-amber-300 shadow-sm mb-3 transition-all"
+          >
+            查看错题本
+          </button>
           <button
             @click="goHome"
-            class="w-full py-3 px-6 rounded-xl text-lg font-medium bg-blue-500 text-white hover:bg-blue-600"
+            class="w-full py-3 px-6 rounded-2xl text-lg font-medium bg-sky-500 text-white hover:bg-sky-600 shadow-sm transition-all"
           >
             返回首页
           </button>
@@ -94,10 +107,16 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import QuestionCard from '../components/QuestionCard.vue';
 import QuestionNav from '../components/QuestionNav.vue';
+import PlayerAvatar from '../components/PlayerAvatar.vue';
 import { getRandomQuestions, validateAnswer, isBlank } from '../utils/game.js';
+import { recordMistake } from '../utils/mistakeBook.js';
+import { loadAvatar } from '../utils/avatars.js';
 
 const route = useRoute();
 const router = useRouter();
+
+// 顶部小头像（本机选的 Q版头像）
+const avatarId = ref(loadAvatar());
 
 // 竞赛配置：3年级 10 题，4-5年级 20 题，统一 10 分钟
 const grade = ref(Number(route.query.grade) === 45 ? 45 : 3);
@@ -222,11 +241,47 @@ function judgeAll() {
   finalScore.value = { correct };
 }
 
+/**
+ * 交卷后把错题写进错题本（本地存储）
+ * - 未作答的题：kind = 'unanswered'
+ * - 作答了但没算对的题：kind = 'wrong'，并记下学生写的算式
+ * - 算对的题不写入
+ * 中途返回不调用这个函数（与“交卷后才判分”保持一致）
+ */
+function collectMistakes() {
+  for (const q of questions.value) {
+    if (!isAnswered(q.id)) {
+      recordMistake({
+        grade: grade.value,
+        numbers: q.numbers,
+        solution: q.solution,
+        expression: '',
+        source: 'contest',
+        kind: 'unanswered',
+      });
+      continue;
+    }
+
+    const expression = records.value[q.id].expression;
+    if (!validateAnswer(q.numbers, expression).valid) {
+      recordMistake({
+        grade: grade.value,
+        numbers: q.numbers,
+        solution: q.solution,
+        expression,
+        source: 'contest',
+        kind: 'wrong',
+      });
+    }
+  }
+}
+
 function endContest() {
   if (timer) clearInterval(timer);
   timer = null;
   commitCurrent();
   judgeAll();
+  collectMistakes();
   showResult.value = true;
 }
 
@@ -238,5 +293,11 @@ function goHome() {
   if (timer) clearInterval(timer);
   timer = null;
   router.push('/');
+}
+
+function goMistakes() {
+  if (timer) clearInterval(timer);
+  timer = null;
+  router.push('/mistakes');
 }
 </script>

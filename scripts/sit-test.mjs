@@ -7,6 +7,8 @@ import { renderToString } from 'vue/server-renderer';
 import { createRouter, createMemoryHistory } from 'vue-router';
 import App from '../src/App.vue';
 import QuestionCard from '../src/components/QuestionCard.vue';
+import PlayerAvatar from '../src/components/PlayerAvatar.vue';
+import AvatarPicker from '../src/components/AvatarPicker.vue';
 import { routes } from '../src/router.js';
 import {
   getRandomQuestions,
@@ -15,6 +17,8 @@ import {
   GRADE45_QUESTIONS,
 } from '../src/utils/game.js';
 import { solveFlat24, evalFlat } from '../src/utils/solver.js';
+import { recordMistake, clearMistakes } from '../src/utils/mistakeBook.js';
+import { AVATARS } from '../src/utils/avatars.js';
 
 let passed = 0;
 let failed = 0;
@@ -51,6 +55,18 @@ async function renderCard(props) {
   return html.replace(/<!--[\s\S]*?-->/g, '');
 }
 
+/** 单独渲染任意组件（头像、头像选择器用） */
+async function renderComponent(component, props) {
+  const app = createSSRApp({ render: () => h(component, props) });
+  const html = await renderToString(app);
+  return html.replace(/<!--[\s\S]*?-->/g, '');
+}
+
+/** 统计带某个 data-testid 的元素个数，样式改动不会影响断言 */
+function countTestId(html, id) {
+  return countOccurrences(html, `data-testid="${id}"`);
+}
+
 // 按钮文字两侧 Vue 可能保留空格（静态文本），所以用宽松匹配
 function hasButton(html, text) {
   const escaped = text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -65,14 +81,21 @@ try {
   const html = await renderPage('/');
   check('首页渲染成功且非空白', html.length > 300, `长度=${html.length}`);
   check('首页包含标题', html.includes('24点游戏'));
-  check('两个年级都直接列出', html.includes('3年级') && html.includes('4-5年级'));
-  check('不需要先单独选年级',
-    !html.includes('请先选择年级') && !html.includes('选择年级'));
-  check('每个年级各有题题练与竞赛入口（共 2+2 个）',
-    countOccurrences(html, '题题练') === 2 && countOccurrences(html, '竞赛') === 2,
+  check('首页列出两个年级供选择', html.includes('3年级') && html.includes('4-5年级'));
+  check('有独立的“选择年级”步骤', html.includes('选择年级'));
+  check('全页只有一组题题练/竞赛入口',
+    countOccurrences(html, '题题练') === 1 && countOccurrences(html, '竞赛') === 1,
     `题题练=${countOccurrences(html, '题题练')} 竞赛=${countOccurrences(html, '竞赛')}`);
-  check('3年级显示 10 题、4-5年级显示 20 题',
-    html.includes('10分钟 · 10题') && html.includes('10分钟 · 20题'));
+  check('默认选中 3年级（竞赛显示 10 题）',
+    html.includes('10分钟 · 10题') && !html.includes('10分钟 · 20题'),
+    `10题=${html.includes('10分钟 · 10题')} 20题=${html.includes('10分钟 · 20题')}`);
+  check('有错题本入口', html.includes('错题本'));
+  check('首页有 Q版头像入口', countTestId(html, 'avatar-trigger') === 1 && countTestId(html, 'player-avatar') >= 1);
+  check('头像选择弹层里有 12 款可选头像', countTestId(html, 'avatar-option') === 12,
+    `实际=${countTestId(html, 'avatar-option')}`);
+  check('两个年级卡片可选', countTestId(html, 'grade-option') === 2);
+  check('两个模式入口各一个', countTestId(html, 'mode-practice') === 1 && countTestId(html, 'mode-contest') === 1);
+  check('无未渲染的模板变量', !html.includes('{{'));
 } catch (e) {
   check('首页渲染成功且非空白', false, e.message);
 }
@@ -83,18 +106,20 @@ try {
   const html = await renderPage({ path: '/practice', query: { grade: '3' } });
   check('页面渲染成功且非空白', html.length > 500, `长度=${html.length}`);
   check('显示 3年级 · 题题练', html.includes('3年级') && html.includes('题题练'));
-  check('题目有 4 个数字按钮', countOccurrences(html, 'w-16 h-16') === 4, `实际=${countOccurrences(html, 'w-16 h-16')}`);
+  check('题目有 4 个数字按钮', countTestId(html, 'number-btn') === 4, `实际=${countTestId(html, 'number-btn')}`);
   check('运算符按钮 6 个（3年级也开放括号）',
-    countOccurrences(html, 'bg-orange-500') === 6 && html.includes('>(</button>') && html.includes('>)</button>'),
-    `运算符按钮=${countOccurrences(html, 'bg-orange-500')}`);
+    countTestId(html, 'op-btn') === 6 && html.includes('>(</button>') && html.includes('>)</button>'),
+    `运算符按钮=${countTestId(html, 'op-btn')}`);
   check('乘除按钮用数学符号 × ÷', html.includes('>×</button>') && html.includes('>÷</button>'));
   check('有提交按钮', hasButton(html, '提交'));
   check('有“查看正确答案”按钮', hasButton(html, '查看正确答案'));
   check('查看答案不在算式框那一行（算式框独占一行）',
-    /min-h-\[52px\] mb-3[^>]*>/.test(html) && !/min-h-\[52px\][^>]*>[\s\S]{0,40}查看正确答案/.test(html));
+    html.indexOf('data-testid="expression-box"') < html.indexOf('data-testid="clear-btn"') &&
+      html.indexOf('data-testid="clear-btn"') < html.indexOf('data-testid="solution-btn"'));
   check('清除与回退按钮仍在', html.includes('✋ 清除') && html.includes('⌫ 回退'));
   check('未答对时不给“下一题”', !hasButton(html, '下一题 →'));
   check('没有“跳过”按钮', !hasButton(html, '跳过'));
+  check('顶部显示当前 Q版头像', countTestId(html, 'player-avatar') === 1);
   check('无未渲染的模板变量', !html.includes('{{'));
 } catch (e) {
   check('页面渲染成功且非空白', false, e.message);
@@ -107,8 +132,8 @@ try {
   check('页面渲染成功且非空白', html.length > 500, `长度=${html.length}`);
   check('显示 4-5年级', html.includes('4-5年级'));
   check('运算符按钮 6 个（含括号）',
-    countOccurrences(html, 'bg-orange-500') === 6 && html.includes('>(</button>') && html.includes('>)</button>'),
-    `运算符按钮=${countOccurrences(html, 'bg-orange-500')}`);
+    countTestId(html, 'op-btn') === 6 && html.includes('>(</button>') && html.includes('>)</button>'),
+    `运算符按钮=${countTestId(html, 'op-btn')}`);
 } catch (e) {
   check('页面渲染成功且非空白', false, e.message);
 }
@@ -147,9 +172,78 @@ try {
     hasButton(right, '下一题 →') && !hasButton(right, '提交') && right.includes('disabled'));
 
   const revealed = await renderCard({ ...base, showSubmit: true, showNext: false, locked: false });
-  check('查看答案按钮存在且不在算式框内', hasButton(revealed, '查看正确答案'));
+  check('查看答案按钮存在且不在算式框内',
+    countTestId(revealed, 'solution-btn') === 1 && countTestId(revealed, 'expression-box') === 1);
 } catch (e) {
   check('答题卡渲染成功', false, e.message);
+}
+
+// ---------- Q版头像 ----------
+console.log('\n--- Q版头像 ---');
+try {
+  check('头像数据共 12 款', AVATARS.length === 12, `实际=${AVATARS.length}`);
+
+  let allOk = true;
+  const problems = [];
+  for (const item of AVATARS) {
+    const html = await renderComponent(PlayerAvatar, { avatarId: item.id, size: 56 });
+    if (!html.includes('<svg') || html.length < 500) {
+      allOk = false;
+      problems.push(`${item.id}(长度=${html.length})`);
+    }
+  }
+  check('12 款头像都能渲染出 SVG', allOk, problems.join(' '));
+
+  const fox = await renderComponent(PlayerAvatar, { avatarId: 'fox', size: 56 });
+  const unknown = await renderComponent(PlayerAvatar, { avatarId: '不存在的头像', size: 56 });
+  check('未知头像 id 回落到小狐狸', unknown === fox);
+  check('头像带得体的无障碍标注', fox.includes('role="img"') && fox.includes('aria-label="小狐狸"'));
+  check('头像尺寸可配置', fox.includes('width="56"') && fox.includes('height="56"'));
+
+  // 取 SVG 里的几何数值（属性 + 路径坐标），确保都落在 100x100 画布内，不会画歪或画丢
+  const geometryNumbers = (svg) => {
+    const nums = [];
+    for (const m of svg.matchAll(/\b(?:cx|cy|r|rx|ry|x|y|width|height)="(-?[\d.]+)"/g)) {
+      nums.push(Number(m[1]));
+    }
+    for (const m of svg.matchAll(/\bd="([^"]+)"/g)) {
+      for (const n of m[1].match(/-?[\d.]+/g) || []) nums.push(Number(n));
+    }
+    return nums;
+  };
+
+  let boundsOk = true;
+  const outOfBounds = [];
+  const seen = new Set();
+  for (const item of AVATARS) {
+    const html = await renderComponent(PlayerAvatar, { avatarId: item.id, size: 56 });
+    const bad = geometryNumbers(html).filter((n) => n < 0 || n > 100);
+    if (bad.length) {
+      boundsOk = false;
+      outOfBounds.push(`${item.id}:${bad.join(',')}`);
+    }
+    seen.add(html);
+  }
+  check('每款头像的图形都在 100x100 画布内', boundsOk, outOfBounds.join(' '));
+  check('12 款头像彼此不重复（每只都长得不一样）', seen.size === 12, `去重后=${seen.size}`);
+  check('每款头像都有脸（主椭圆）', fox.includes('<ellipse cx="50" cy="56" rx="30" ry="28"'));
+
+  const picker = await renderComponent(AvatarPicker, { modelValue: 'fox' });
+  check('头像选择器给出 12 个选项', countTestId(picker, 'avatar-option') === 12,
+    `实际=${countTestId(picker, 'avatar-option')}`);
+  check('头像选择器显示每个头像的名字', AVATARS.every((item) => picker.includes(item.name)));
+  check('头像选择器高亮当前选中', picker.includes('ring-sky-400'));
+
+  const catPicker = await renderComponent(AvatarPicker, { modelValue: 'cat' });
+  // 高亮应落在"小猫"那一格：排在狐狸之后、小猫之前
+  const iFoxLabel = picker.indexOf('aria-label="小狐狸"');
+  const iCatLabel = catPicker.indexOf('aria-label="小猫"');
+  const iRing = catPicker.indexOf('ring-sky-400');
+  check('切换选中项时高亮跟随',
+    picker.indexOf('ring-sky-400') < iFoxLabel && iRing > iFoxLabel && iRing < iCatLabel,
+    `狐狸高亮=${picker.indexOf('ring-sky-400')} 狐狸标签=${iFoxLabel} 小猫高亮=${iRing} 小猫标签=${iCatLabel}`);
+} catch (e) {
+  check('头像渲染成功', false, e.message);
 }
 
 // ---------- 竞赛（3年级：10题）----------
@@ -164,7 +258,7 @@ try {
   check('没有“提交”按钮', !hasButton(html, '提交'));
   check('没有“查看正确答案”按钮（竞赛不给答案）', !hasButton(html, '查看正确答案'));
   check('保留清除与回退按钮', html.includes('✋ 清除') && html.includes('⌫ 回退'));
-  check('题号导航有 10 个小方块题号', countOccurrences(html, 'w-9 h-9') === 10, `实际=${countOccurrences(html, 'w-9 h-9')}`);
+  check('题号导航有 10 个小方块题号', countTestId(html, 'nav-item') === 10, `实际=${countTestId(html, 'nav-item')}`);
   check('题号按钮改小了（不再用整格正方形）', !html.includes('aspect-square'));
   check('题号图例只讲已作答/未作答，不讲对错',
     html.includes('>已作答</span>') &&
@@ -172,6 +266,7 @@ try {
       !html.includes('>正确</span>') &&
       !html.includes('>错误</span>'));
   check('括号按钮对所有年级开放', html.includes('>(</button>') && html.includes('>)</button>'));
+  check('顶部显示当前 Q版头像', countTestId(html, 'player-avatar') === 1);
 } catch (e) {
   check('页面渲染成功且非空白', false, e.message);
 }
@@ -183,10 +278,97 @@ try {
   check('页面渲染成功且非空白', html.length > 500, `长度=${html.length}`);
   check('倒计时初始为 10:00', html.includes('10:00'));
   check('总题数为 20', html.includes('0/20'));
-  check('题号导航有 20 个小方块题号', countOccurrences(html, 'w-9 h-9') === 20, `实际=${countOccurrences(html, 'w-9 h-9')}`);
+  check('题号导航有 20 个小方块题号', countTestId(html, 'nav-item') === 20, `实际=${countTestId(html, 'nav-item')}`);
   check('有括号按钮', html.includes('>(</button>') && html.includes('>)</button>'));
 } catch (e) {
   check('页面渲染成功且非空白', false, e.message);
+}
+
+// ---------- 错题本 ----------
+console.log('\n--- 错题本 ---');
+try {
+  const html = await renderPage('/mistakes');
+  check('页面渲染成功且非空白', html.length > 300, `长度=${html.length}`);
+  check('页面标题是错题本', html.includes('错题本'));
+  check('SSR 下没有本地存储也走空态（不报错）', html.includes('还没有错题'));
+  check('空态有返回首页按钮', hasButton(html, '返回首页'));
+  check('空态不显示清空全部', !hasButton(html, '清空全部'));
+  check('无未渲染的模板变量', !html.includes('{{'));
+} catch (e) {
+  check('页面渲染成功且非空白', false, e.message);
+}
+
+// 写入两条错题（SSR 无 localStorage，会落到内存兜底存储），验证列表视图
+console.log('\n--- 错题本列表（含记录）---');
+try {
+  clearMistakes();
+  recordMistake({
+    grade: 3,
+    numbers: [1, 1, 3, 8],
+    solution: '1-1+3*8',
+    expression: '1+1+3*8',
+    source: 'practice',
+    kind: 'wrong',
+  });
+  recordMistake({
+    grade: 45,
+    numbers: [13, 11, 1, 1],
+    solution: '13+11+1-1',
+    expression: '',
+    source: 'contest',
+    kind: 'unanswered',
+  });
+
+  const html = await renderPage('/mistakes');
+  check('有错题时不再显示空态', !html.includes('还没有错题'));
+  check('显示清空全部按钮', hasButton(html, '清空全部'));
+  check('两道错题各一张卡片', countTestId(html, 'mistake-card') === 2, `实际=${countTestId(html, 'mistake-card')}`);
+  check('每道错题显示 4 个数字方块', countTestId(html, 'mistake-number') === 8,
+    `实际=${countTestId(html, 'mistake-number')}`);
+  check('显示学生答案（乘号显示成 ×）', html.includes('你的答案：1+1+3×8'));
+  check('未作答的题标注未作答', html.includes('未作答'));
+  check('显示正确答案（乘号显示成 ×）', html.includes('正确答案：1-1+3×8 = 24'));
+  check('错题卡片可单独移除', countTestId(html, 'mistake-remove') === 2,
+    `实际=${countTestId(html, 'mistake-remove')}`);
+  check('来源与年级标签正确',
+    html.includes('题题练') && html.includes('竞赛') &&
+      html.includes('3年级') && html.includes('4-5年级'));
+  check('无未渲染的模板变量', !html.includes('{{'));
+
+  clearMistakes();
+} catch (e) {
+  check('错题本列表渲染成功', false, e.message);
+}
+
+// ---------- 配色回归护栏 ----------
+console.log('\n--- 配色回归护栏 ---');
+try {
+  const oldBackgrounds = [
+    'from-blue-400 to-purple-500',
+    'from-green-400 to-teal-500',
+    'from-orange-400 to-red-500',
+    'from-rose-400 to-pink-500',
+  ];
+  const pages = [
+    ['首页', await renderPage('/')],
+    ['题题练', await renderPage({ path: '/practice', query: { grade: '3' } })],
+    ['竞赛', await renderPage({ path: '/contest', query: { grade: '3' } })],
+    ['错题本', await renderPage('/mistakes')],
+  ];
+
+  check('四个页面都不再用高饱和渐变底',
+    pages.every(([, html]) => oldBackgrounds.every((old) => !html.includes(old))),
+    pages.filter(([, html]) => oldBackgrounds.some((old) => html.includes(old))).map(([n]) => n).join(' '));
+
+  check('四个页面统一用浅色底',
+    pages.every(([, html]) => html.includes('from-sky-50 via-white to-amber-50')));
+
+  check('卡片改成浅描边 + 淡阴影（不再用 shadow-2xl）',
+    pages.every(([, html]) => !html.includes('shadow-2xl')));
+
+  check('标题用深石板色，不再用纯白文字', pages.every(([, html]) => html.includes('text-slate-800')));
+} catch (e) {
+  check('配色护栏检查通过', false, e.message);
 }
 
 // ---------- 出题质量 ----------

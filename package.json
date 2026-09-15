@@ -7,7 +7,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "gen:bank": "node scripts/generate-bank.mjs",
-    "test:unit": "node tests/solver.test.cjs && node tests/game.test.cjs && node tests/tokens.test.cjs",
+    "test:unit": "node tests/solver.test.cjs && node tests/game.test.cjs && node tests/tokens.test.cjs && node tests/mistakeBook.test.cjs && node tests/avatar.test.cjs",
     "test:sfc": "node scripts/check-sfc.cjs",
     "test:sit": "node --import ./scripts/register-vue.mjs scripts/sit-test.mjs",
     "test": "npm run test:sfc && npm run test:unit && npm run test:sit"
